@@ -1,0 +1,102 @@
+#!/bin/bash
+
+echo ls4w automated VM setup
+
+# Colors
+red=$'\e[1;31m'
+grn=$'\e[1;32m'
+yel=$'\e[1;33m'
+blu=$'\e[1;34m'
+mag=$'\e[1;35m'
+cyn=$'\e[1;36m'
+end=$'\e[0m'
+
+# Set paths
+root_directory=`dirname "$0"`
+ls4w_autounattend=$root_directory/bin/ls4w_autounattend/WindowsBuilder
+ls4w_build_iso=$root_directory/bin/ls4w-build-iso
+ls4w_create_vm=$root_directory/bin/ls4w-create-vm
+ls4w_create_hdd=$root_directory/bin/ls4w-create-hdd
+ls4w_start_vm=$root_directory/bin/ls4w-start-vm
+windows_iso=$1
+
+# Check what exists
+
+check_file_missing() {
+	if [ ! -f $1 ] ; then
+		echo "$1 Missing!"
+		exit 2
+	fi
+}
+
+if [ ! -f $windows_iso ] ; then
+	echo "Requires 1 argument, Windows ISO"
+	exit 2
+fi   
+
+if [ ! -f $ls4w_autounattend ] ; then
+	echo "Auto unattend not found, attempting to build"
+	echo "Cloning..."
+	git clone https://github.com/LS4W/ls4w-autounattend &>> ls4w_example.log
+	echo "Building with dotnet..."
+	dotnet build ls4w-autounattend &>> ls4w_example.log
+	echo "Checking for binary..."
+	if [ ! -f "$root_directory/ls4w-autounattend/bin/Debug/netcoreapp3.1/WindowsBuilder" ] ; then
+		echo "No executable find."
+		echo "Build ls4w_autounattend and place files in ./bin"
+		exit 2;
+	else
+		cp $root_directory/ls4w-autounattend/bin/Debug/netcoreapp3.1 $root_directory/bin/ls4w_autounattend -r
+	fi
+fi
+
+if [ ! -f $ls4w_build_iso ] ; then
+	echo "ls4w-build-iso not found, retrieving"
+	echo "Cloning..."
+	git clone https://github.com/LS4W/ls4w-build-iso &>> ls4w_example.log
+	echo "Checking for binary..."
+	if [ ! -f "$root_directory/ls4w-build-iso/ls4w-build-iso" ] ; then
+		echo "No executable found"
+		exit 2
+	else
+		cp $root_directory/ls4w-build-iso/ls4w-build-iso $root_directory/bin/ls4w-build-iso
+	fi
+fi
+
+if [ ! -f $ls4w_start_vm ] ; then
+	echo "Missing ls4w-qemu-vm-setup, retrieving"
+	echo "Cloning..."
+	git clone https://github.com/LS4W/ls4w-qemu-vm-setup &>> ls4w_example.log
+	echo "Checking for binary..."
+	if [ ! -f "$root_directory/ls4w-qemu-vm-setup/ls4w-start-vm" ] ; then
+		echo "No executable found"
+		exit 2
+	else
+		cp $root_directory/ls4w-qemu-vm-setup/ls4w-start-vm $root_directory/bin/ls4w-start-vm
+		cp $root_directory/ls4w-qemu-vm-setup/ls4w-create-vm $root_directory/bin/ls4w-create-vm
+		cp $root_directory/ls4w-qemu-vm-setup/ls4w-create-hdd $root_directory/bin/ls4w-create-hdd
+	fi
+fi
+
+echo "Doing final check for binaries..."
+check_file_missing $ls4w_autounattend
+check_file_missing $ls4w_build_iso
+check_file_missing $ls4w_create_vm
+check_file_missing $ls4w_start_vm
+check_file_missing $ls4w_create_hdd
+
+echo "All files retrieved, building VM"
+
+#### 
+
+printf "${yel}Creating autounattend.xml${end}\n"
+$ls4w_autounattend > autounattend.xml
+
+printf "${yel}Patching ISO with autounattend.xml${end}\n"
+$ls4w_build_iso $windows_iso autounattend.xml patched_windows.iso
+
+printf "${yel}Creating HDD${end}\n"
+$ls4w_create_hdd windows_ls4w.qcow2 20G
+
+printf "${yel}Booting VM with HDD and ISO${end}\n"
+$ls4w_create_vm -i patched_windows.iso -h windows_ls4w.qcow2
